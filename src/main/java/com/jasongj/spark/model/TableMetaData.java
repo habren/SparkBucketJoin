@@ -2,10 +2,14 @@ package com.jasongj.spark.model;
 
 import java.io.Serializable;
 import java.net.URI;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.jasongj.spark.reader.BucketReaderIterator;
+import com.jasongj.spark.reader.ParquetBucketReaderIterator;
+import com.jasongj.spark.reader.TextBucketReaderIterator;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.hadoop.fs.Path;
@@ -28,10 +32,9 @@ public class TableMetaData implements Serializable{
     @Setter @Getter private char fieldDelimiter;
     @Setter @Getter private char lineDelimiter;
     @Setter @Getter private Map<Integer, Bucket> buckets = new HashMap<Integer, Bucket>();
+    @Setter @Getter @NotNull private DataType dataType;
 
-    public TableMetaData() {}
-
-    public TableMetaData(String database, String table, List<FieldSchema> fields, List<Integer> bucketColumns, List<Integer> sortColumns, URI location, int bucketNum) {
+    public TableMetaData(String database, String table, List<FieldSchema> fields, List<Integer> bucketColumns, List<Integer> sortColumns, URI location, int bucketNum, DataType dataType) {
         this.database = database;
         this.table = table;
         this.fields = fields;
@@ -39,5 +42,6 @@ public class TableMetaData implements Serializable{
         this.sortColumns = sortColumns;
         this.location = location;
         this.bucketNum = bucketNum;
+        this.dataType = dataType;
     }
 }
