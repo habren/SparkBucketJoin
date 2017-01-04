@@ -1,4 +1,12 @@
 .idea
 bin
+out
+build
 *.iml
+*.ipr
+*.iws
 .gradle
+classes
+metastore_db
+*.log
+logs
