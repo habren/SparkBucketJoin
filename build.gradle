@@ -16,6 +16,9 @@ ext {
     hiveVersion = '2.1.1'
     hadoopVersion = '2.7.3'
     sparkVersion = '2.1.0'
+    parquetVersion = '1.9.0'
+    kafkaVersion = '0.10.1.1'
+    log4j2Version = '2.7'
 }
 
 
@@ -32,14 +35,14 @@ dependencies {
 //            [group: 'commons-cli', name: 'commons-cli', version:'1.2'],
             [group: 'org.projectlombok', name: 'lombok', version:'1.16.12'],
             [group: 'org.slf4j', name: 'slf4j-api', version:'1.7.22'],
-            [group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: '2.7'],
-            [group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.7'],
-            [group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.7'],
+            [group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: log4j2Version],
+            [group: 'org.apache.logging.log4j', name: 'log4j-core', version: log4j2Version],
+            [group: 'org.apache.logging.log4j', name: 'log4j-api', version: log4j2Version],
             [group: 'com.google.guava', name: 'guava', version: '16.0.1']
     )
     compile(
-            [group: 'org.apache.kafka', name: 'kafka_2.11', version: '0.10.1.0'],
-            [group: 'org.apache.kafka', name: 'kafka-clients', version: '0.10.1.0'],
+            [group: 'org.apache.kafka', name: 'kafka_2.11', version: kafkaVersion],
+            [group: 'org.apache.kafka', name: 'kafka-clients', version: kafkaVersion],
             [group: 'com.fasterxml.jackson.module', name: 'jackson-module-scala_2.11', version: '2.6.5'],
             [group: 'org.apache.hive', name: 'hive-exec', version: hiveVersion],
             [group: 'org.apache.hive', name: 'hive-metastore', version: hiveVersion],
@@ -58,7 +61,11 @@ dependencies {
             [group: 'org.apache.spark', name: 'spark-sql_2.11', version: sparkVersion],
             [group: 'org.apache.spark', name: 'spark-streaming_2.11', version: sparkVersion],
             [group: 'org.apache.spark', name: 'spark-streaming-kafka-0-10_2.11', version: sparkVersion],
-            [group: 'org.apache.spark', name: 'spark-streaming-kafka-0-8_2.11', version: sparkVersion]
+            [group: 'org.apache.spark', name: 'spark-streaming-kafka-0-8_2.11', version: sparkVersion],
+            [group: 'org.apache.parquet', name: 'parquet-column', version: parquetVersion],
+            [group: 'org.apache.parquet', name: 'parquet-hadoop', version: parquetVersion],
+            [group: 'org.apache.parquet', name: 'parquet-common', version: parquetVersion],
+            [group: 'org.apache.parquet', name: 'parquet-jackson', version: parquetVersion]
     )
 
 
