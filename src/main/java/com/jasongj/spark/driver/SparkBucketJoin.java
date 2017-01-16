@@ -18,6 +18,7 @@ import com.jasongj.spark.model.Bucket;
 import com.jasongj.spark.utils.SortMergeJoinIterator;
 import com.jasongj.spark.writer.TextTupleWriter;
 import com.jasongj.spark.writer.TupleWriter;
+import org.apache.commons.cli.*;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -27,7 +28,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 
-import org.apache.commons.cli.*;
 import org.apache.spark.SparkConf;
 import org.apache.spark.TaskContext;
 import org.apache.spark.api.java.JavaRDD;
@@ -234,7 +234,8 @@ public class SparkBucketJoin {
             options.addOption(OptionBuilder.isRequired(false).withArgName("hive-site.xml").withLongOpt("hive-site").hasArg(true).withDescription("Hive configuration file. eg. hive-site.xml").create("s"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("core-site.xml").withLongOpt("core-site").hasArg(true).withDescription("Hadoop configuration file. eg. core-site.xml").create("a"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("spark app name").withLongOpt("spark-app-name").hasArg(true).withDescription("Spark Application Name").create("n"));
-            options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("properties").withValueSeparator('=').hasArgs().withDescription("Hive properties").create("p"));
+            options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hive-properties").withValueSeparator('=').hasArgs().withDescription("Hive properties").create("p"));
+            options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hadoop-properties").withValueSeparator('=').hasArgs().withDescription("Hadoop properties").create("e"));
             options.addOption(OptionBuilder.isRequired(false).withLongOpt("help").hasArg(false).withDescription("Help").create("h"));
             CommandLineParser parser = new GnuParser();
 
@@ -271,6 +272,9 @@ public class SparkBucketJoin {
             hadoopConfiguration = new Configuration();
             if(commandLine.hasOption("a")) {
                 hadoopConfiguration.addResource(new Path(commandLine.getOptionValue("a")));
+            }
+            if(commandLine.hasOption("e")) {
+                commandLine.getOptionProperties("e").forEach((key, value) -> hadoopConfiguration.set(key.toString(), value.toString()));
             }
             if(commandLine.hasOption("s")) {
                 hiveConf.addResource(new Path(commandLine.getOptionValue("s")));
