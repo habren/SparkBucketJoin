@@ -1,10 +1,13 @@
 package com.jasongj.spark.writer;
 
+import com.jasongj.spark.model.DataType;
+import com.jasongj.spark.model.TableMetaData;
 import com.jasongj.spark.model.Tuple;
 import org.apache.commons.compress.utils.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.TableMeta;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -21,10 +24,15 @@ public class TextTupleWriter extends TupleWriter {
     private SimpleDateFormat timestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private String fieldDelimiter, lineDelimiter;
 
-    public TextTupleWriter(DataOutputStream dataOutputStream, Configuration hadoopConfiguration, Path path, char fieldDelimiter, char lineDelimiter) {
-        super(dataOutputStream, hadoopConfiguration, path);
-        this.fieldDelimiter = String.valueOf(fieldDelimiter);
-        this.lineDelimiter = String.valueOf(lineDelimiter);
+    public TextTupleWriter(DataOutputStream dataOutputStream, Configuration hadoopConfiguration, Path path, TableMetaData outputTableMetaData) {
+        super(dataOutputStream, hadoopConfiguration, path, outputTableMetaData);
+        this.fieldDelimiter = String.valueOf(outputTableMetaData.getFieldDelimiter());
+        this.lineDelimiter = String.valueOf(outputTableMetaData.getLineDelimiter());
+    }
+
+    @Override
+    public boolean init() {
+        return super.init() && outputTableMetaData.getDataType() == DataType.TEXT;
     }
 
     @Override
