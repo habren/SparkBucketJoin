@@ -17,7 +17,10 @@ ext {
     hadoopVersion = '2.7.3'
     sparkVersion = '2.1.0'
     parquetVersion = '1.9.0'
-    kafkaVersion = '0.10.1.1'
+//    parquetVersion = '1.8.1'
+    avroVersion = '1.8.1'
+//    avroVersion = '1.7.6'
+    kafkaVersion = '0.10.1.s1'
     log4j2Version = '2.7'
 }
 
@@ -65,7 +68,10 @@ dependencies {
             [group: 'org.apache.parquet', name: 'parquet-column', version: parquetVersion],
             [group: 'org.apache.parquet', name: 'parquet-hadoop', version: parquetVersion],
             [group: 'org.apache.parquet', name: 'parquet-common', version: parquetVersion],
-            [group: 'org.apache.parquet', name: 'parquet-jackson', version: parquetVersion]
+            [group: 'org.apache.parquet', name: 'parquet-jackson', version: parquetVersion],
+            [group: 'org.apache.parquet', name: 'parquet-avro', version: parquetVersion],
+            [group: 'org.apache.avro', name: 'avro-tools', version: avroVersion],
+            [group: 'org.apache.avro', name: 'avro', version: avroVersion]
     )
 
 
