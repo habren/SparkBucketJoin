@@ -51,7 +51,7 @@ public class TextTupleWriter extends TupleWriter {
         try {
             dataOutputStream.write(data.getBytes());
         } catch (IOException ex) {
-            throw new RuntimeException(ex);
+            throw new RuntimeException("Write Tuple with TextTupleWriter exception", ex);
         }
     }
 
