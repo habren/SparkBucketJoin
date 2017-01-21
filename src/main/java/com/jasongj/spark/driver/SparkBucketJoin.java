@@ -1,5 +1,6 @@
 package com.jasongj.spark.driver;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.*;
 import java.util.function.Function;
@@ -8,7 +9,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.jasongj.spark.model.Tuple;
 import com.jasongj.spark.reader.BucketReaderIterator;
@@ -28,6 +28,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 
+import org.apache.parquet.Preconditions;
 import org.apache.spark.SparkConf;
 import org.apache.spark.TaskContext;
 import org.apache.spark.api.java.JavaRDD;
@@ -86,17 +87,16 @@ public class SparkBucketJoin {
         javaSparkContext.hadoopConfiguration().addResource(hadoopConfiguration);
         Broadcast<TableMetaData> broadcastBaseTable = javaSparkContext.broadcast(baseTableMetaData);
         Broadcast<TableMetaData> broadcastDeltaTable = javaSparkContext.broadcast(deltaTableMetaData);
+        Broadcast<TableMetaData> broadcastOutputTable = javaSparkContext.broadcast(outputTableMetaData);
         JavaRDD<Tuple> rdd = javaSparkContext.parallelize(ImmutableList.<Integer>of(1, 2, 3), 3)
                 .mapPartitionsWithIndex((Integer index, Iterator<Integer> integerIterator) -> {
                     TableMetaData baseTable = broadcastBaseTable.value();
                     TableMetaData deltaTable = broadcastDeltaTable.value();
-                    Bucket baseBucket = baseTable.getBuckets().get(index);
-                    Bucket deltaBucket = deltaTable.getBuckets().get(index);
 
-                    Class<? extends BucketReaderIterator> baseReaderClass = baseTable.getDataType().getReadClass();
-                    BucketReaderIterator baseIterator = baseReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(hadoopConfiguration, baseTableMetaData, index);
-                    Class<? extends BucketReaderIterator> deltaReaderClass = baseTable.getDataType().getReadClass();
-                    BucketReaderIterator deltaIterator = deltaReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(hadoopConfiguration, deltaTableMetaData, index);
+                    Class<? extends BucketReaderIterator> baseReaderClass = baseTable.getDataType().getReaderClass();
+                    BucketReaderIterator baseIterator = baseReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(hadoopConfiguration, baseTable, index);
+                    Class<? extends BucketReaderIterator> deltaReaderClass = baseTable.getDataType().getReaderClass();
+                    BucketReaderIterator deltaIterator = deltaReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(hadoopConfiguration, deltaTable, index);
                     SortMergeJoinIterator sortMergeJoinIterator = new SortMergeJoinIterator(baseIterator, deltaIterator);
                     return sortMergeJoinIterator;
                 }, false);
@@ -111,9 +111,12 @@ public class SparkBucketJoin {
             FileSystem fileSystem = FileSystem.newInstance(hadoopConfiguration);
 
             FSDataOutputStream outputStream = fileSystem.create(path, true);
-            TupleWriter tupleWriter = new TextTupleWriter(outputStream, hadoopConfiguration, path, outputTableMetaData.getFieldDelimiter(), outputTableMetaData.getLineDelimiter());
 
+            TableMetaData outputTable = broadcastOutputTable.value();
+            Class<? extends TupleWriter> tupleWriterClass = outputTable.getDataType().getWriterClass();
+            TupleWriter tupleWriter = tupleWriterClass.getConstructor(DataOutputStream.class, Configuration.class, Path.class, TableMetaData.class).newInstance(outputStream, hadoopConfiguration, path, outputTable);
             iterator.forEachRemaining((Tuple tuple) -> tupleWriter.write(tuple));
+            tupleWriter.close();
             taskContext.addTaskCompletionListener((TaskContext context) -> {
                 Path finalPath = new Path(outputTableMetaData.getLocation().toString() + getBucketPathName(partitionIndex));
                 try {
