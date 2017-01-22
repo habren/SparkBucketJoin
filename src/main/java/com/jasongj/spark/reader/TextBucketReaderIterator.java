@@ -49,6 +49,7 @@ public class TextBucketReaderIterator extends BucketReaderIterator {
             recordReader.initialize(fileSplit, taskAttemptContext);
         } catch (IOException | InterruptedException ex) {
             this.recordReader = null;
+            LOG.error("Construct BucketReaderIterator failed", ex);
             throw new RuntimeException("Construct BucketReaderIterator failed", ex);
         }
     }

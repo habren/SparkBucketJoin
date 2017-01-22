@@ -43,8 +43,8 @@ public class HiveMetaDataExtractor {
 
         Table table = hiveMetaStoreClient.getTable(databaseName, tableName);
         StorageDescriptor storageDescriptor = table.getSd();
-        Preconditions.checkArgument(storageDescriptor.getBucketColsSize() > 0, "Bucket column set for {}.{} should not be empty", databaseName, tableName);
-        Preconditions.checkArgument(storageDescriptor.getSortColsSize() > 0, "Sorted column set for {}.{} should not be empty", databaseName, tableName);
+        Preconditions.checkArgument(storageDescriptor.getBucketColsSize() > 0, "Bucket column set for %s.%s should not be empty", databaseName, tableName);
+        Preconditions.checkArgument(storageDescriptor.getSortColsSize() > 0, "Sorted column set for %s.%s should not be empty", databaseName, tableName);
 
         AtomicInteger index = new AtomicInteger(0);
         List<FieldSchema> fieldSchemas = hiveMetaStoreClient.getSchema(databaseName, tableName);
