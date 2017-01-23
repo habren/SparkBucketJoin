@@ -37,8 +37,8 @@ public class SortMergeJoinIterator implements Iterator<Tuple>{
 
     @Override
     public Tuple next() {
-        baseHeader = baseIterator.preFetch();
-        deltaHeader = deltaIterator.preFetch();
+        baseHeader = baseIterator.fetchTuple();
+        deltaHeader = deltaIterator.fetchTuple();
         Tuple tuple = null;
         if(baseHeader == null) {
             tuple = deltaIterator.next();
