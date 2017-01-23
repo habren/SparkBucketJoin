@@ -54,7 +54,7 @@ public class TextBucketReaderIterator extends BucketReaderIterator {
         }
     }
 
-    public Tuple preFetch() {
+    public Tuple fetchTuple() {
         try {
             if(this.header != null) {
                 return this.header;
@@ -86,6 +86,7 @@ public class TextBucketReaderIterator extends BucketReaderIterator {
                 case "string" : data.add(dataStr); break;
                 case "bigdecimal": data.add(BigDecimal.valueOf(Long.valueOf(dataStr))); break;
                 case "int": data.add(Integer.valueOf(dataStr)); break;
+                case "integer": data.add(Integer.valueOf(dataStr)); break;
                 case "long": data.add(Long.valueOf(dataStr)); break;
                 case "double": data.add(Double.valueOf(dataStr)); break;
                 case "float": data.add(Float.valueOf(dataStr)); break;
