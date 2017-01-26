@@ -4,8 +4,8 @@
         <Console name="console" target="SYSTEM_OUT">
             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} [%L] %msg%n" />
         </Console>
-        <RollingFile name="rollingfile" fileName="logs/SparkBucketJoin.log"
-                     filePattern="logs/${date:yyyy-MM}/SparkBucketJoin-%d{MM-dd-yyyy}-%i.log.gz">
+        <RollingFile name="rollingfile" fileName="${spark.yarn.app.container.log.dir}/logs/SparkBucketJoin.log"
+                     filePattern="${spark.yarn.app.container.log.dir}/logs/${date:yyyy-MM}/SparkBucketJoin-%d{MM-dd-yyyy}-%i.log.gz">
             <PatternLayout>
                 <Pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} [%L] %msg%n</Pattern>
             </PatternLayout>
@@ -18,7 +18,7 @@
     <loggers>
         <root level="info">
             <appender-ref ref="console" />
-            <!-- <appender-ref ref="rollingfile" /> -->
+            <appender-ref ref="rollingfile" />
         </root>
     </loggers>
 </configuration>
