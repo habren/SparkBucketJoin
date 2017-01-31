@@ -1,4 +1,4 @@
-package com.jasongj.spark.utils;
+package com.jasongj.spark.join;
 
 import com.google.common.base.Preconditions;
 import com.jasongj.spark.model.Tuple;
