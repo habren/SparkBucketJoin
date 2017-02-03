@@ -1,8 +1,9 @@
 package com.jasongj.spark.driver;
 
-import java.io.DataOutputStream;
+
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -15,14 +16,16 @@ import com.jasongj.spark.reader.BucketReaderIterator;
 import com.jasongj.spark.utils.HiveMetaDataExtractor;
 import com.jasongj.spark.model.TableMetaData;
 import com.jasongj.spark.model.Bucket;
-import com.jasongj.spark.utils.SortMergeJoinIterator;
-import com.jasongj.spark.writer.TextTupleWriter;
+import com.jasongj.spark.join.SortMergeJoinIterator;
 import com.jasongj.spark.writer.TupleWriter;
-import org.apache.commons.cli.*;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.OptionBuilder;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.GnuParser;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -58,7 +61,7 @@ public class SparkBucketJoin {
     private static HiveConf hiveConf;
     private static Configuration hadoopConfiguration;
 
-    public static void main(String[] args) throws ParseException, TException, InterruptedException {
+    public static void main(String[] args) throws TException, InterruptedException {
         if(!parseArguments(args)) {
             return;
         }
@@ -85,9 +88,16 @@ public class SparkBucketJoin {
         }
         JavaSparkContext javaSparkContext = new JavaSparkContext(sparkConf);
         javaSparkContext.hadoopConfiguration().addResource(hadoopConfiguration);
+
+
         Broadcast<TableMetaData> broadcastBaseTable = javaSparkContext.broadcast(baseTableMetaData);
         Broadcast<TableMetaData> broadcastDeltaTable = javaSparkContext.broadcast(deltaTableMetaData);
         Broadcast<TableMetaData> broadcastOutputTable = javaSparkContext.broadcast(outputTableMetaData);
+
+        Map<String, String> hadoopConf = new ConcurrentHashMap<String, String>();
+        hadoopConfiguration.forEach((Map.Entry<String, String> entry) -> hadoopConf.put(entry.getKey(), entry.getValue()));
+        Broadcast<Map<String, String>> configurationBroadcast = javaSparkContext.broadcast(hadoopConf);
+
         JavaRDD<Tuple> rdd = javaSparkContext.parallelize(ImmutableList.<Integer>of(1, 2, 3), 3)
                 .mapPartitionsWithIndex((Integer index, Iterator<Integer> integerIterator) -> {
                     TableMetaData baseTable = broadcastBaseTable.value();
@@ -107,24 +117,25 @@ public class SparkBucketJoin {
             int partitionIndex = taskContext.partitionId();
             int attemptNumber = taskContext.attemptNumber();
             Path path = new Path(outputTableMetaData.getLocation().toString() + getTmpPathName(attemptNumber, partitionIndex));
-
-            FileSystem fileSystem = FileSystem.newInstance(hadoopConfiguration);
-
-            FSDataOutputStream outputStream = fileSystem.create(path, true);
+            Map<String, String> hadoopConfigurationMap = configurationBroadcast.value();
+            Configuration configuration = new Configuration();
+            hadoopConfigurationMap.forEach((String key, String value) -> configuration.set(key, value));
+            FileSystem fileSystem = FileSystem.newInstance(configuration);
 
             TableMetaData outputTable = broadcastOutputTable.value();
             Class<? extends TupleWriter> tupleWriterClass = outputTable.getDataType().getWriterClass();
-            TupleWriter tupleWriter = tupleWriterClass.getConstructor(DataOutputStream.class, Configuration.class, Path.class, TableMetaData.class).newInstance(outputStream, hadoopConfiguration, path, outputTable);
+            TupleWriter tupleWriter = tupleWriterClass.getConstructor(Configuration.class, Path.class, TableMetaData.class).newInstance(configuration, path, outputTable);
+            tupleWriter.init();
             iterator.forEachRemaining((Tuple tuple) -> tupleWriter.write(tuple));
             tupleWriter.close();
+            Path finalPath = new Path(outputTableMetaData.getLocation().toString() + getBucketPathName(partitionIndex));
+            fileSystem.rename(path, finalPath);
             taskContext.addTaskCompletionListener((TaskContext context) -> {
-                Path finalPath = new Path(outputTableMetaData.getLocation().toString() + getBucketPathName(partitionIndex));
-                try {
-                    fileSystem.rename(path, finalPath);
-                } catch (IOException ex) {
-                    LOG.warn(String.format("Failed to rename %s to %s", path, finalPath), ex);
-                }
-
+//                try {
+//                    fileSystem.rename(path, finalPath);
+//                } catch (IOException ex) {
+//                    LOG.warn(String.format("Failed to rename %s to %s", path, finalPath), ex);
+//                }
             });
             taskContext.addTaskFailureListener((TaskContext context, Throwable throwable) -> {
                 LOG.warn("Task failed ", throwable);
@@ -165,10 +176,20 @@ public class SparkBucketJoin {
             Map<Integer, Bucket> buckets = Stream.of(fileSystem.listStatus(path)).map((FileStatus fileStatus) -> {
                 Path filePath = fileStatus.getPath();
                 String baseName = FilenameUtils.getBaseName(filePath.getName());
-                Pattern bucketFilePattern = Pattern.compile("(\\d+)_(\\d+)");
-                Matcher matcher = bucketFilePattern.matcher(baseName);
-                if(matcher.matches()) {
-                    int index = Integer.parseInt(matcher.group(1));
+
+                // Extract bucket sequence from TAZ based hive table bucket file name
+                Pattern bucketFileTAZPattern = Pattern.compile("(\\d+)_(\\d+)");
+                Matcher matcherTAZ = bucketFileTAZPattern.matcher(baseName);
+                if(matcherTAZ.matches()) {
+                    int index = Integer.parseInt(matcherTAZ.group(1));
+                    return new Bucket(filePath.toUri(), index, fileStatus.getLen());
+                }
+
+                // Extract bucket sequence from Map Reduce based hive table bucket file name
+                Pattern bucketFileMRPattern = Pattern.compile("part-(\\d+)");
+                Matcher matcherMR = bucketFileMRPattern.matcher(baseName);
+                if(matcherMR.matches()) {
+                    int index = Integer.parseInt(matcherMR.group(1));
                     return new Bucket(filePath.toUri(), index, fileStatus.getLen());
                 }
                 return null;
@@ -240,7 +261,7 @@ public class SparkBucketJoin {
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hive-properties").withValueSeparator('=').hasArgs().withDescription("Hive properties").create("p"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hadoop-properties").withValueSeparator('=').hasArgs().withDescription("Hadoop properties").create("e"));
             options.addOption(OptionBuilder.isRequired(false).withLongOpt("help").hasArg(false).withDescription("Help").create("h"));
-            CommandLineParser parser = new GnuParser();
+            GnuParser parser = new GnuParser();
 
 
             CommandLine commandLine = parser.parse(options, args);
@@ -284,7 +305,7 @@ public class SparkBucketJoin {
             }
 
             return true;
-        } catch (ParseException ex) {
+        } catch (Exception ex) {
             LOG.error("Arguments are incorrect", ex);
             return false;
         }
