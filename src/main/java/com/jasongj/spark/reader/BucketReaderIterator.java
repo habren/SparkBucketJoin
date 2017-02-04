@@ -51,6 +51,8 @@ public abstract class BucketReaderIterator implements Iterator<Tuple> {
     }
 
     @Override
-    public void remove() {}
+    public void remove() {
+
+    }
 
 }
