@@ -98,7 +98,12 @@ public class SparkBucketJoin {
         hadoopConfiguration.forEach((Map.Entry<String, String> entry) -> hadoopConf.put(entry.getKey(), entry.getValue()));
         Broadcast<Map<String, String>> configurationBroadcast = javaSparkContext.broadcast(hadoopConf);
 
-        JavaRDD<Tuple> rdd = javaSparkContext.parallelize(ImmutableList.<Integer>of(1, 2, 3), 3)
+        int buckets = baseTableMetaData.getBucketNum();
+        List<Integer> list = new ArrayList<Integer>();
+        for(int i = 0; i < buckets; i++) {
+            list.add(i);
+        }
+        JavaRDD<Tuple> rdd = javaSparkContext.parallelize(list, baseTableMetaData.getBucketNum())
                 .mapPartitionsWithIndex((Integer index, Iterator<Integer> integerIterator) -> {
                     TableMetaData baseTable = broadcastBaseTable.value();
                     TableMetaData deltaTable = broadcastDeltaTable.value();
