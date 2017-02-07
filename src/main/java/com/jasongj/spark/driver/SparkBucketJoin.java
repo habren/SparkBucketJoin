@@ -107,11 +107,14 @@ public class SparkBucketJoin {
                 .mapPartitionsWithIndex((Integer index, Iterator<Integer> integerIterator) -> {
                     TableMetaData baseTable = broadcastBaseTable.value();
                     TableMetaData deltaTable = broadcastDeltaTable.value();
+                    Map<String, String> hadoopConfigurationMap = configurationBroadcast.value();
+                    Configuration configuration = new Configuration();
+                    hadoopConfigurationMap.forEach((String key, String value) -> configuration.set(key, value));
 
                     Class<? extends BucketReaderIterator> baseReaderClass = baseTable.getDataType().getReaderClass();
-                    BucketReaderIterator baseIterator = baseReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(hadoopConfiguration, baseTable, index);
+                    BucketReaderIterator baseIterator = baseReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(configuration, baseTable, index);
                     Class<? extends BucketReaderIterator> deltaReaderClass = baseTable.getDataType().getReaderClass();
-                    BucketReaderIterator deltaIterator = deltaReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(hadoopConfiguration, deltaTable, index);
+                    BucketReaderIterator deltaIterator = deltaReaderClass.getConstructor(Configuration.class, TableMetaData.class, Integer.class).newInstance(configuration, deltaTable, index);
                     SortMergeJoinIterator sortMergeJoinIterator = new SortMergeJoinIterator(baseIterator, deltaIterator);
                     return sortMergeJoinIterator;
                 }, false);
