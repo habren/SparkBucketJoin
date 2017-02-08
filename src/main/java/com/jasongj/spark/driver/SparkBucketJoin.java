@@ -8,6 +8,7 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import com.google.common.collect.ImmutableList;
@@ -98,11 +99,7 @@ public class SparkBucketJoin {
         hadoopConfiguration.forEach((Map.Entry<String, String> entry) -> hadoopConf.put(entry.getKey(), entry.getValue()));
         Broadcast<Map<String, String>> configurationBroadcast = javaSparkContext.broadcast(hadoopConf);
 
-        int buckets = baseTableMetaData.getBucketNum();
-        List<Integer> list = new ArrayList<Integer>();
-        for(int i = 0; i < buckets; i++) {
-            list.add(i);
-        }
+        List<Integer> list = IntStream.range(0, baseTableMetaData.getBucketNum()).collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
         JavaRDD<Tuple> rdd = javaSparkContext.parallelize(list, baseTableMetaData.getBucketNum())
                 .mapPartitionsWithIndex((Integer index, Iterator<Integer> integerIterator) -> {
                     TableMetaData baseTable = broadcastBaseTable.value();
