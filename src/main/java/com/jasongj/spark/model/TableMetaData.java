@@ -33,6 +33,7 @@ public class TableMetaData implements Serializable{
     @Setter @Getter private char lineDelimiter;
     @Setter @Getter private Map<Integer, Bucket> buckets = new HashMap<Integer, Bucket>();
     @Setter @Getter @NotNull private DataType dataType;
+    @Setter @Getter @NotNull private ExecutionEngineType executionEngineType;
 
     public TableMetaData(String database, String table, List<FieldSchema> fields, List<Integer> bucketColumns, List<Integer> sortColumns, URI location, int bucketNum, DataType dataType) {
         this.database = database;
