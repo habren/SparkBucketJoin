@@ -4,19 +4,14 @@ package com.jasongj.spark.driver;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
-import com.google.common.collect.ImmutableList;
+import com.jasongj.spark.model.ExecutionEngineType;
 import com.jasongj.spark.model.Tuple;
 import com.jasongj.spark.reader.BucketReaderIterator;
+import com.jasongj.spark.utils.FileSystemUtils;
 import com.jasongj.spark.utils.HiveMetaDataExtractor;
 import com.jasongj.spark.model.TableMetaData;
-import com.jasongj.spark.model.Bucket;
 import com.jasongj.spark.join.SortMergeJoinIterator;
 import com.jasongj.spark.writer.TupleWriter;
 import org.apache.commons.cli.CommandLine;
@@ -24,10 +19,8 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.GnuParser;
-import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -57,9 +50,8 @@ public class SparkBucketJoin {
     private static String outputDB;
     private static String outputTable;
     private static List<String> joinKeys;
-    private static boolean localMode;
-    private static String sparkAppName;
     private static HiveConf hiveConf;
+    private static SparkConf sparkConf;
     private static Configuration hadoopConfiguration;
 
     public static void main(String[] args) throws TException, InterruptedException {
@@ -77,16 +69,18 @@ public class SparkBucketJoin {
                 , "Base table, delta table and output table should have the same bucket number"
         );
 
-        if (!checkAndLoadFile(hadoopConfiguration, baseTableMetaData)
-                || !checkAndLoadFile(hadoopConfiguration, deltaTableMetaData)
-                || !makeOutputTableReady(hadoopConfiguration, outputTableMetaData)) {
+        Preconditions.checkArgument(baseTableMetaData.getExecutionEngineType() == deltaTableMetaData.getExecutionEngineType(),
+                "Execution type of base table is %s while it of delta table is %s",
+                baseTableMetaData.getExecutionEngineType(), deltaTableMetaData.getExecutionEngineType());
+
+        outputTableMetaData.setExecutionEngineType(baseTableMetaData.getExecutionEngineType());
+
+        if (!FileSystemUtils.checkAndLoadFile(hadoopConfiguration, baseTableMetaData)
+                || !FileSystemUtils.checkAndLoadFile(hadoopConfiguration, deltaTableMetaData)
+                || !FileSystemUtils.makeOutputTableReady(hadoopConfiguration, outputTableMetaData)) {
             return;
         }
 
-        SparkConf sparkConf = new SparkConf().setAppName(sparkAppName);
-        if(localMode) {
-            sparkConf.setMaster("local[3]");
-        }
         JavaSparkContext javaSparkContext = new JavaSparkContext(sparkConf);
         javaSparkContext.hadoopConfiguration().addResource(hadoopConfiguration);
 
@@ -118,123 +112,57 @@ public class SparkBucketJoin {
 
         rdd.foreachPartition((Iterator<Tuple> iterator) -> {
             Logger LOG = LoggerFactory.getLogger("TupleWriter");
-            TaskContext taskContext = TaskContext.get();
-            int partitionIndex = taskContext.partitionId();
-            int attemptNumber = taskContext.attemptNumber();
-            Path path = new Path(outputTableMetaData.getLocation().toString() + getTmpPathName(attemptNumber, partitionIndex));
+
+            TableMetaData outputTable = broadcastOutputTable.value();
             Map<String, String> hadoopConfigurationMap = configurationBroadcast.value();
             Configuration configuration = new Configuration();
             hadoopConfigurationMap.forEach((String key, String value) -> configuration.set(key, value));
             FileSystem fileSystem = FileSystem.newInstance(configuration);
 
-            TableMetaData outputTable = broadcastOutputTable.value();
+            TaskContext taskContext = TaskContext.get();
+            int partitionIndex = taskContext.partitionId();
+            int attemptNumber = taskContext.attemptNumber();
+            Path path = getTmpPathName(outputTable, attemptNumber, partitionIndex);
+
             Class<? extends TupleWriter> tupleWriterClass = outputTable.getDataType().getWriterClass();
             TupleWriter tupleWriter = tupleWriterClass.getConstructor(Configuration.class, Path.class, TableMetaData.class).newInstance(configuration, path, outputTable);
             tupleWriter.init();
             iterator.forEachRemaining((Tuple tuple) -> tupleWriter.write(tuple));
             tupleWriter.close();
-            Path finalPath = new Path(outputTableMetaData.getLocation().toString() + getBucketPathName(partitionIndex));
+
+            Path finalPath = getBucketPathName(outputTable, partitionIndex);
             fileSystem.rename(path, finalPath);
             taskContext.addTaskCompletionListener((TaskContext context) -> {
-//                try {
-//                    fileSystem.rename(path, finalPath);
-//                } catch (IOException ex) {
-//                    LOG.warn(String.format("Failed to rename %s to %s", path, finalPath), ex);
-//                }
+                LOG.info("Write %s successfully with attempt number %d, partition id %d, attempt id %d", finalPath.getName(),
+                        context.attemptNumber(), context.partitionId(), context.taskAttemptId());
             });
             taskContext.addTaskFailureListener((TaskContext context, Throwable throwable) -> {
-                LOG.warn("Task failed ", throwable);
+                LOG.warn(String.format("Write %s failed with attempt number %d, partition id %d, attempt id %d", path.getName(),
+                        context.attemptNumber(), context.partitionId(), context.taskAttemptId()), throwable);
                 try {
                     fileSystem.delete(path, true);
                 } catch (IOException ex) {
                     LOG.warn("Failed to delete temporary file " + path.getName(), ex);
                 }
-
             });
         });
-
 
         hiveMetaDataExtractor.close();
         javaSparkContext.stop();
     }
 
-    private static String getTmpPathName(int attemptNumber, int index) {
-        return String.format("%s.%d.tmp", getBucketPathName(index), attemptNumber);
+    private static Path getTmpPathName(TableMetaData tableMetaData, int attemptNumber, int index) {
+        return new Path(String.format("%s%s.%d.tmp", tableMetaData.getLocation().toString(), getBucketPathName(tableMetaData, index).getName(), attemptNumber));
     }
 
-    private static String getBucketPathName(int index) {
-        return "/" + StringUtils.leftPad(String.valueOf(index), 6, "0") + "_0";
-    }
-
-    private static boolean checkAndLoadFile(Configuration hadoopConfiguration, TableMetaData tableMetaData) {
-        try {
-            Path path = new Path(tableMetaData.getLocation());
-            FileSystem fileSystem = FileSystem.newInstance(hadoopConfiguration);
-            if(!fileSystem.exists(path)) {
-                LOG.error("Path '{}' does not exist", tableMetaData.getLocation());
-                return false;
-            }
-            if(!fileSystem.isDirectory(path)) {
-                LOG.error("Path '{}' is not a valid directory", tableMetaData.getLocation());
-                return false;
-            }
-            Map<Integer, Bucket> buckets = Stream.of(fileSystem.listStatus(path)).map((FileStatus fileStatus) -> {
-                Path filePath = fileStatus.getPath();
-                String baseName = FilenameUtils.getBaseName(filePath.getName());
-
-                // Extract bucket sequence from TAZ based hive table bucket file name
-                Pattern bucketFileTAZPattern = Pattern.compile("(\\d+)_(\\d+)");
-                Matcher matcherTAZ = bucketFileTAZPattern.matcher(baseName);
-                if(matcherTAZ.matches()) {
-                    int index = Integer.parseInt(matcherTAZ.group(1));
-                    return new Bucket(filePath.toUri(), index, fileStatus.getLen());
-                }
-
-                // Extract bucket sequence from Map Reduce based hive table bucket file name
-                Pattern bucketFileMRPattern = Pattern.compile("part-(\\d+)");
-                Matcher matcherMR = bucketFileMRPattern.matcher(baseName);
-                if(matcherMR.matches()) {
-                    int index = Integer.parseInt(matcherMR.group(1));
-                    return new Bucket(filePath.toUri(), index, fileStatus.getLen());
-                }
-                return null;
-            }).filter((Bucket bucket) -> bucket != null)
-            .collect(Collectors.toMap(Bucket::getIndex, Function.identity()));
-            tableMetaData.setBuckets(buckets);
-            return true;
-        } catch (IOException ex) {
-            LOG.error("Check file failed", ex);
-            return false;
+    private static Path getBucketPathName(TableMetaData tableMetaData, int index) {
+        String path = StringUtils.EMPTY;
+        if(tableMetaData.getExecutionEngineType() == ExecutionEngineType.TAZ) {
+            path = String.format("%s/%s_0", tableMetaData.getLocation().toString(), StringUtils.leftPad(String.valueOf(index), 6, "0"));
+        } else {
+            path = String.format("%s/part-%s", tableMetaData.getLocation().toString(), StringUtils.leftPad(String.valueOf(index), 6, "0"));
         }
-    }
-
-    private static boolean makeOutputTableReady(Configuration hadoopConfiguration, TableMetaData tableMetaData) {
-        try{
-            Path path = new Path(tableMetaData.getLocation());
-            FileSystem fileSystem = FileSystem.newInstance(hadoopConfiguration);
-            if(fileSystem.exists(path)) {
-                for(FileStatus fileStatus : fileSystem.listStatus(path)) {
-                    try {
-                        fileSystem.delete(fileStatus.getPath(), true);
-                        LOG.info("Delete file {} successfully", fileStatus.getPath().getName());
-                    } catch (IOException ex) {
-                        LOG.error("Delete file " + fileStatus.getPath().getName() + " failed", ex);
-                        return false;
-                    }
-                }
-            } else {
-                if(fileSystem.mkdirs(path)) {
-                    LOG.info("Successfully create the target folder {}", path.getName());
-                } else {
-                    LOG.error("Failed to create the target folder {}", path.getName());
-                    return false;
-                }
-            }
-            return true;
-        } catch (IOException ex) {
-            LOG.error("Didn't make the output table directory ready");
-            return false;
-        }
+        return new Path(path);
     }
 
     private static boolean parseArguments(String[] args) {
@@ -265,6 +193,7 @@ public class SparkBucketJoin {
             options.addOption(OptionBuilder.isRequired(false).withArgName("spark app name").withLongOpt("spark-app-name").hasArg(true).withDescription("Spark Application Name").create("n"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hive-properties").withValueSeparator('=').hasArgs().withDescription("Hive properties").create("p"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hadoop-properties").withValueSeparator('=').hasArgs().withDescription("Hadoop properties").create("e"));
+            options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("spark-conf").withValueSeparator('=').hasArgs().withDescription("Spark configuration, which will override spark-defaults.xml").create("r"));
             options.addOption(OptionBuilder.isRequired(false).withLongOpt("help").hasArg(false).withDescription("Help").create("h"));
             GnuParser parser = new GnuParser();
 
@@ -287,11 +216,11 @@ public class SparkBucketJoin {
             outputDB = output[0];
             outputTable = output[1];
             joinKeys = Arrays.asList(commandLine.getOptionValue("k").split(","));
-            localMode = commandLine.hasOption("l");
-            sparkAppName = commandLine.getOptionValue("n", DEFAULT_APP_NAME);
+            boolean localMode = commandLine.hasOption("l");
+            String sparkAppName = commandLine.getOptionValue("n", DEFAULT_APP_NAME);
 
             if(commandLine.hasOption("h")) {
-                formatter.printHelp(DEFAULT_APP_NAME, options);
+                formatter.printHelp(sparkAppName, options);
             }
 
             hiveConf = new HiveConf();
@@ -307,6 +236,14 @@ public class SparkBucketJoin {
             }
             if(commandLine.hasOption("s")) {
                 hiveConf.addResource(new Path(commandLine.getOptionValue("s")));
+            }
+
+            sparkConf = new SparkConf().setAppName(sparkAppName);
+            if(localMode) {
+                sparkConf.setMaster("local[3]");
+            }
+            if(commandLine.hasOption("r")) {
+                commandLine.getOptionProperties("r").forEach((key, value) -> sparkConf.set(key.toString(), value.toString()));
             }
 
             return true;
