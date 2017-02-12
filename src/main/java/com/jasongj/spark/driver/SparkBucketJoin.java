@@ -188,9 +188,10 @@ public class SparkBucketJoin {
             options.addOption(OptionBuilder.isRequired(true).withArgName("database.table").withLongOpt("output-table").withValueSeparator('.').hasArgs().withDescription("Output table name, including database name").create("o"));
             options.addOption(OptionBuilder.isRequired(true).withArgName("join key").withLongOpt("join-key").hasArg(true).withDescription("Join key").create("k"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("local mode").withLongOpt("local-mode").hasArg(false).withDescription("Local mode").create("l"));
+            options.addOption(OptionBuilder.isRequired(false).withArgName("spark app name").withLongOpt("spark-app-name").hasArg(true).withDescription("Spark Application Name").create("n"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("hive-site.xml").withLongOpt("hive-site").hasArg(true).withDescription("Hive configuration file. eg. hive-site.xml").create("s"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("core-site.xml").withLongOpt("core-site").hasArg(true).withDescription("Hadoop configuration file. eg. core-site.xml").create("a"));
-            options.addOption(OptionBuilder.isRequired(false).withArgName("spark app name").withLongOpt("spark-app-name").hasArg(true).withDescription("Spark Application Name").create("n"));
+//            options.addOption(OptionBuilder.isRequired(false).withArgName("spark-defaults.properties").withLongOpt("spark-defaults").hasArg(true).withDescription("Spark property file. eg. spark-defaults.xml").create("c"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hive-properties").withValueSeparator('=').hasArgs().withDescription("Hive properties").create("p"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("hadoop-properties").withValueSeparator('=').hasArgs().withDescription("Hadoop properties").create("e"));
             options.addOption(OptionBuilder.isRequired(false).withArgName("key=value").withLongOpt("spark-conf").withValueSeparator('=').hasArgs().withDescription("Spark configuration, which will override spark-defaults.xml").create("r"));
